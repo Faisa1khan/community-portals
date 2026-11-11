@@ -108,8 +108,42 @@ async function main(): Promise<number> {
     }
   }
 
+  if (!["search", "detail"].includes(cmd)) {
+    process.stderr.write(
+      JSON.stringify({ error: `Unknown command "${cmd}"`, code: "BAD_CMD" }) + "\n",
+    )
+    return 1
+  }
+
+  const extra = (flags._ as string[]).slice(cmd === "detail" ? 2 : 1)
+  if (extra.length > 0) {
+    process.stderr.write(
+      JSON.stringify({
+        error: `unexpected argument "${extra[0]}" for '${cmd}'; see --help`,
+        code: "BAD_ARG",
+      }) + "\n",
+    )
+    return 1
+  }
+
   if (cmd === "search") {
-    const fmt = (flags.format as string) || "json"
+    if (flags.query !== undefined && (typeof flags.query !== "string" || !flags.query.trim())) {
+      process.stderr.write(
+        JSON.stringify({ error: "--query requires a non-empty value", code: "BAD_ARG" }) + "\n",
+      )
+      return 1
+    }
+
+    const fmt = flags.format !== undefined ? String(flags.format) : "json"
+    if (!["json", "table", "plain"].includes(fmt)) {
+      process.stderr.write(
+        JSON.stringify({
+          error: `--format must be one of json|table|plain, got "${fmt}"`,
+          code: "BAD_ARG",
+        }) + "\n",
+      )
+      return 1
+    }
 
     const parseIntFlag = (name: string, raw: string | boolean | string[]): number | null => {
       const val = typeof raw === "string" ? Number(raw.trim()) : NaN
@@ -132,10 +166,10 @@ async function main(): Promise<number> {
     }
 
     const opts: SearchOpts = {
-      query: typeof flags.query === "string" ? flags.query : undefined,
+      query: typeof flags.query === "string" ? flags.query.trim() : undefined,
       remote: flags.remote === true,
       limit: flags.limit ? parseInt(flags.limit as string, 10) : undefined,
-      format: (["json", "table", "plain"].includes(fmt) ? fmt : "json") as SearchOpts["format"],
+      format: fmt as SearchOpts["format"],
     }
     return runSearch(opts)
   }
@@ -148,17 +182,23 @@ async function main(): Promise<number> {
       )
       return 1
     }
-    const fmt = (flags.format as string) || "json"
+    const fmt = flags.format !== undefined ? String(flags.format) : "json"
+    if (!["json", "plain"].includes(fmt)) {
+      process.stderr.write(
+        JSON.stringify({
+          error: `--format must be one of json|plain, got "${fmt}"`,
+          code: "BAD_ARG",
+        }) + "\n",
+      )
+      return 1
+    }
     const opts: DetailOpts = {
       id,
-      format: (fmt === "plain" ? "plain" : "json") as DetailOpts["format"],
+      format: fmt as DetailOpts["format"],
     }
     return runDetail(opts)
   }
 
-  process.stderr.write(
-    JSON.stringify({ error: `Unknown command "${cmd}"`, code: "BAD_CMD" }) + "\n",
-  )
   return 1
 }
 

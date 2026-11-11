@@ -17,4 +17,4 @@ bun run src/cli.ts detail 67196 --format plain
 - **Public access**: Queries public server-rendered pages and YC's search API with zero authentication or API keys.
 - **Inertia.js payload parsing**: Extracts structured props from server-rendered HTML `<div data-page="...">`.
 - **Robust error handling**: Exponential backoff with jitter on 429/5xx, structured JSON errors to stderr.
-- **Interchangeable interface**: Complies with the repository's portal-skill contract (`search` and `detail` commands, `--format json|table|plain`).
+- **Interchangeable interface**: Complies with the repository's portal-skill contract (`search` with `--format json|table|plain` and `detail` with `--format json|plain`).

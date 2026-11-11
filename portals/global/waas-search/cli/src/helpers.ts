@@ -76,25 +76,120 @@ export async function jsonFetch<T = unknown>(url: string): Promise<T | null> {
   throw new Error("Request failed after max retries")
 }
 
-/** Unescape standard HTML entities without third-party dependencies */
+const NAMED_ENTITIES: Record<string, string> = {
+  quot: '"',
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  apos: "'",
+}
+
+/** Unescape standard HTML entities in a single pass without third-party dependencies */
 export function unescapeHtml(str: string): string {
-  return str
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, "/")
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+  return str.replace(
+    /&(?:(quot|amp|lt|gt|apos)|#(\d+)|#[xX]([0-9a-fA-F]+));/g,
+    (match, named, dec, hex) => {
+      if (named) {
+        return NAMED_ENTITIES[named] ?? match
+      }
+      if (dec) {
+        const code = parseInt(dec, 10)
+        if (code >= 0 && code <= 0x10ffff) {
+          try {
+            return String.fromCodePoint(code)
+          } catch {
+            return match
+          }
+        }
+        return match
+      }
+      if (hex) {
+        const code = parseInt(hex, 16)
+        if (code >= 0 && code <= 0x10ffff) {
+          try {
+            return String.fromCodePoint(code)
+          } catch {
+            return match
+          }
+        }
+        return match
+      }
+      return match
+    },
+  )
+}
+
+/**
+ * Characters a reader of the posting never sees but a model reading this
+ * output does: C0/C1 controls other than tab, newline and carriage return, the
+ * soft hyphen, bidi marks/embeddings/overrides/isolates, zero-width characters
+ * and invisible operators, the BOM, variation selectors, and Unicode tag
+ * characters (U+E0000-E007F), which can spell out a whole hidden instruction.
+ */
+export const INVISIBLE_CHARS =
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFE00-\uFE0F\uFEFF\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu
+
+/** Strip INVISIBLE_CHARS from string or object/array recursively */
+export function stripInvisible<T>(value: T): T {
+  if (typeof value === "string") return value.replace(INVISIBLE_CHARS, "") as T
+  if (Array.isArray(value)) return value.map(stripInvisible) as T
+  if (value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stripInvisible(v)])) as T
+  }
+  return value
+}
+
+const VOID_TAGS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"])
+
+function isHiddenTag(attrs: string): boolean {
+  for (const m of attrs.matchAll(/([^\s"'=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g)) {
+    const name = m[1].toLowerCase()
+    const value = m[2] ?? m[3] ?? m[4] ?? ""
+    if (name === "hidden") return true
+    if (name === "style" && /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden|mso-hide\s*:\s*all)\b/i.test(value)) {
+      return true
+    }
+  }
+  return false
+}
+
+export function visibleHtml(html: string): string {
+  const src = html
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(/<(script|style|template)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, "")
+  const tags = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:[\s/](?:[^>"']|"[^"]*"|'[^']*')*)?)>/g
+  const kept: string[] = []
+  let from = 0
+  let m: RegExpExecArray | null
+  while ((m = tags.exec(src)) !== null) {
+    if (m[1] || !m[3] || !isHiddenTag(m[3])) continue
+    const tag = m[2].toLowerCase()
+    let end = tags.lastIndex
+    if (!VOID_TAGS.has(tag)) {
+      end = src.length
+      let depth = 1
+      let s: RegExpExecArray | null
+      while ((s = tags.exec(src)) !== null) {
+        if (s[2].toLowerCase() !== tag) continue
+        depth += s[1] ? -1 : 1
+        if (depth === 0) {
+          end = tags.lastIndex
+          break
+        }
+      }
+    }
+    kept.push(src.slice(from, m.index))
+    from = end
+    tags.lastIndex = end
+  }
+  kept.push(src.slice(from))
+  return kept.join("")
 }
 
 /** Convert raw HTML snippet into clean readable plain text with preserved paragraphs */
 export function htmlToPlain(html: string | null | undefined): string {
   if (!html) return ""
-  let t = html
+  let t = visibleHtml(html)
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\s*\/p\s*>/gi, "\n\n")
     .replace(/<\s*\/div\s*>/gi, "\n\n")
@@ -103,7 +198,8 @@ export function htmlToPlain(html: string | null | undefined): string {
     .replace(/<[^>]+>/g, "")
   t = unescapeHtml(t)
   const lines = t.split("\n").map((l) => l.trim())
-  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+  const text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+  return stripInvisible(text)
 }
 
 /** Extract Inertia.js data-page payload from HTML */
@@ -159,7 +255,20 @@ export interface WaasJobDetail extends WaasJobCard {
   hiringDescription: string | null
   companyUrl: string | null
   teamSize: number | null
-  applyUrl: string
+  applyUrl: string | null
+}
+
+export function validateApplyUrl(urlStr: unknown): string | null {
+  if (typeof urlStr !== "string" || !urlStr.trim()) return null
+  try {
+    const parsed = new URL(urlStr.trim(), BASE_URL)
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+      return parsed.href
+    }
+  } catch {
+    return null
+  }
+  return null
 }
 
 export function mapRawToCard(raw: RawJob): WaasJobCard {
@@ -193,6 +302,7 @@ export interface SearchFilters {
  */
 export async function fetchJobs(filters: SearchFilters): Promise<WaasJobCard[]> {
   const jobsMap = new Map<string, WaasJobCard>()
+  const caughtErrors: unknown[] = []
 
   // 1. Fetch server-rendered /jobs page (with query/remote query params)
   const pageParams = new URLSearchParams()
@@ -212,8 +322,8 @@ export async function fetchJobs(filters: SearchFilters): Promise<WaasJobCard[]> 
         }
       }
     }
-  } catch {
-    // If HTML page fetch encounters an issue, proceed to search API
+  } catch (err) {
+    caughtErrors.push(err)
   }
 
   // 2. If query is provided, also query /jobs/search which searches across all YC jobs
@@ -227,9 +337,13 @@ export async function fetchJobs(filters: SearchFilters): Promise<WaasJobCard[]> 
           jobsMap.set(card.id, card)
         }
       }
-    } catch {
-      // Continue with whatever jobs were found
+    } catch (err) {
+      caughtErrors.push(err)
     }
+  }
+
+  if (jobsMap.size === 0 && caughtErrors.length > 0) {
+    throw caughtErrors[0]
   }
 
   let cards = Array.from(jobsMap.values())
@@ -267,11 +381,11 @@ export async function fetchJobs(filters: SearchFilters): Promise<WaasJobCard[]> 
 export function parseJobDetail(data: any, id: string): WaasJobDetail {
   const job = data?.props?.job || {}
   const comp = data?.props?.company || {}
-  const applyUrl = data?.props?.applyUrl || `${BASE_URL}/jobs/${id}`
+  const applyUrl = validateApplyUrl(data?.props?.applyUrl)
   const loc = job.location || comp.location || null
   const isRemote = typeof loc === "string" && /\bremote\b/i.test(loc)
 
-  return {
+  return stripInvisible({
     id,
     title: job.title || "",
     company: comp.name || "",
@@ -294,5 +408,5 @@ export function parseJobDetail(data: any, id: string): WaasJobDetail {
     companyUrl: comp.url || null,
     teamSize: typeof comp.teamSize === "number" ? comp.teamSize : null,
     applyUrl,
-  }
+  })
 }

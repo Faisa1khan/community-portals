@@ -73,7 +73,7 @@ bun run .agents/skills/waas-search/cli/src/cli.ts search -q "full stack" --limit
 # Search AI or machine learning roles in plain text format
 bun run .agents/skills/waas-search/cli/src/cli.ts search -q "machine learning" --remote --format plain
 
-# View all featured remote startup jobs
+# View 15 remote startup jobs in table format
 bun run .agents/skills/waas-search/cli/src/cli.ts search --remote --limit 15 --format table
 
 # Inspect full details for listing 67196 in plain text format
@@ -103,4 +103,4 @@ All errors are written to **stderr** as `{ "error": "...", "code": "..." }` and 
 ## Terms and robots.txt
 
 `https://www.workatastartup.com/robots.txt` disallows nothing (`Disallow:` with no path). The CLI reads the public
-`/jobs` and `/jobs/search` pages only. Applying goes through Y Combinator single sign-on and is never automated here.
+`/jobs` page and `/jobs/search` JSON search API endpoint only. Applying goes through Y Combinator single sign-on and is never automated here.

@@ -15,24 +15,35 @@ export interface DetailOpts {
 /** Accept a raw job ID or a workatastartup.com job URL */
 export function normalizeId(input: string): string | null {
   const trimmed = input.trim()
-  const match = trimmed.match(/\/jobs\/(\d+)(?:[\/?#]|$)/)
-  if (match) return match[1]
   const bare = trimmed.match(/^(\d+)$/)
   if (bare) return bare[1]
+
+  try {
+    const url = new URL(trimmed)
+    const host = url.hostname.toLowerCase()
+    if (host !== "workatastartup.com" && host !== "www.workatastartup.com") {
+      return null
+    }
+    const match = url.pathname.match(/^\/jobs\/(\d+)\/?$/)
+    if (match) return match[1]
+  } catch {
+    // Not a valid URL
+  }
+
   return null
 }
 
 export function renderDetailPlain(job: WaasJobDetail): string {
-  const lines: string[] = [
+  const lines: (string | null)[] = [
     job.title,
     `${job.company}${job.batch ? ` (${job.batch})` : ""} · ${job.location || "Location not listed"}`,
     "",
-    job.salary ? `Salary: ${job.salary}` : "",
-    job.equity ? `Equity: ${job.equity}` : "",
-    job.jobType ? `Employment: ${job.jobType}` : "",
-    job.minExperience ? `Experience: ${job.minExperience}` : "",
-    job.sponsorsVisa ? `Visa Sponsorship: ${job.sponsorsVisa}` : "",
-    job.skills.length > 0 ? `Skills: ${job.skills.join(", ")}` : "",
+    job.salary ? `Salary: ${job.salary}` : null,
+    job.equity ? `Equity: ${job.equity}` : null,
+    job.jobType ? `Employment: ${job.jobType}` : null,
+    job.minExperience ? `Experience: ${job.minExperience}` : null,
+    job.sponsorsVisa ? `Visa Sponsorship: ${job.sponsorsVisa}` : null,
+    job.skills.length > 0 ? `Skills: ${job.skills.join(", ")}` : null,
     "",
     "--- JOB DESCRIPTION ---",
     job.description || "(no description provided)",
@@ -48,10 +59,12 @@ export function renderDetailPlain(job: WaasJobDetail): string {
   lines.push(
     "",
     `Listing URL: ${job.url}`,
-    `Apply URL: ${job.applyUrl} (Note: applying requires a Y Combinator login, but viewing details does not.)`,
+    job.applyUrl
+      ? `Apply URL: ${job.applyUrl} (Note: applying requires a Y Combinator login, but viewing details does not.)`
+      : "Apply URL: unavailable",
   )
 
-  return lines.filter((l) => l !== "").join("\n")
+  return lines.filter((l): l is string => l !== null).join("\n")
 }
 
 export async function runDetail(opts: DetailOpts): Promise<number> {
@@ -71,7 +84,7 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
 
     const data = parseDataPage(html)
     if (!data?.props?.job) {
-      writeError("Job not found or invalid page payload", "NOT_FOUND")
+      writeError("Failed to parse job page payload", "PARSE_FAILED")
       return 1
     }
 

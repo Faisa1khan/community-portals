@@ -26,6 +26,8 @@ Returns server-rendered HTML containing an Inertia.js root element:
 ```
 The CLI parses the HTML-entity-encoded JSON in `data-page` directly, bypassing client-side JavaScript execution.
 
+> **Note on Client-Side Filtering**: In addition to passing `query` and `remote` to the server, the CLI re-filters results client-side. The query matcher normalizes variants such as `front end` and `front-end` to `frontend` and requires every word in the query to match across title, category, or company name. The remote filter checks whether the location string contains the word `remote` (`/\bremote\b/i`). As a result of this client-side filtering, CLI output may be a subset of the site's server-rendered results.
+
 ### 2. Search API (JSON)
 
 ```
@@ -86,8 +88,9 @@ Props extracted:
 | `category` | `roleType` | N/A | Broad role category (Frontend, Full stack, Backend, ML, Design) |
 | `salary` | `salary` | `job.salaryRange` | Formatted salary range or null |
 | `equity` | N/A | `job.equityRange` | Equity range string (e.g. `0.05% - 0.15%`) |
-| `date` | `companyLastActiveAt` | null | Recency indicator (e.g. "3 days ago") |
+| `date` | `companyLastActiveAt` | null | Relative company-activity string (when the company was last active, not the job posting date, e.g. "3 days ago") |
 | `url` | `https://www.workatastartup.com/jobs/<id>` | Same | Canonical posting URL |
+| `applyUrl` | N/A | `props.applyUrl` | Application URL (http/https only) or null |
 
 ## Access & Policy Notes
 
