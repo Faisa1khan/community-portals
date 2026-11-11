@@ -190,6 +190,15 @@ async function main(): Promise<number> {
       return 1
     }
 
+    if ((flags._ as string[]).length > 2) {
+      process.stderr.write(
+        JSON.stringify({
+          error: `unexpected positional argument "${(flags._ as string[])[2]}" for 'detail'; one identifier only`,
+          code: "BAD_ARG",
+        }) + "\n",
+      )
+      return 1
+    }
     const id = (flags._ as string[])[1]
     if (!id) {
       process.stderr.write(JSON.stringify({ error: "detail requires an <id|url>", code: "NO_ID" }) + "\n")

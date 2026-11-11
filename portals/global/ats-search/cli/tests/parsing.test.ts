@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { parseIdentifier } from "../src/commands/detail";
+import { mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { cleanHtml, decodeHtmlEntities, loadWatchlist, sanitizeApplyUrl } from "../src/helpers";
 
 describe("ATS Watchlist parsing and identifiers", () => {
@@ -77,6 +80,22 @@ describe("ATS Watchlist parsing and identifiers", () => {
     expect(watchlist.some((w) => w.slug === "vercel" && w.provider === "greenhouse")).toBe(true);
     expect(watchlist.some((w) => w.slug === "notion" && w.provider === "ashby")).toBe(true);
     expect(watchlist.some((w) => w.slug === "meesho" && w.provider === "lever")).toBe(true);
+  });
+
+  test("loadWatchlist names the file when an explicit path is not valid JSON", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+    const bad = join(dir, "broken.json");
+    writeFileSync(bad, "{ not json");
+
+    expect(() => loadWatchlist(bad)).toThrow(/broken\.json is not valid JSON/);
+  });
+
+  test("loadWatchlist rejects an explicit path whose JSON is not an array", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+    const obj = join(dir, "object.json");
+    writeFileSync(obj, JSON.stringify({ company: "Vercel" }));
+
+    expect(() => loadWatchlist(obj)).toThrow(/must contain a JSON array/);
   });
 
   test("loadWatchlist with explicit non-existent path throws error without fallback", () => {

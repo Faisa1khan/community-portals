@@ -7,6 +7,7 @@ import {
   writeError,
   type ATSProvider,
   type NormalizedJob,
+  type WatchlistEntry,
 } from "../helpers.js"
 
 export interface DetailOpts {
@@ -80,7 +81,21 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
     return 1
   }
 
-  const watchlist = loadWatchlist(opts.watchlist)
+  // Safe ids only: a job id becomes a URL path segment, so a value containing "/"
+  // or ".." could address a different board than the watchlist slug.
+  const SAFE_JOB_ID = /^[A-Za-z0-9._-]{1,128}$/
+
+  let watchlist: WatchlistEntry[]
+  try {
+    watchlist = loadWatchlist(opts.watchlist)
+  } catch (err) {
+    writeError(
+      `Could not load watchlist: ${err instanceof Error ? err.message : String(err)}`,
+      "WATCHLIST_FAILED",
+    )
+    return 1
+  }
+
   let parsed = parseIdentifier(target, opts.watchlist)
 
   if (parsed) {
@@ -95,9 +110,19 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
     parsed.company = entry.company
     parsed.slug = entry.slug
   } else {
-    // If bare ID, check watchlist companies to find which board it belongs to
+    if (!SAFE_JOB_ID.test(target)) {
+      writeError(`Invalid job id "${target}": expected letters, digits, dot, underscore or hyphen`, "BAD_ID")
+      return 1
+    }
+    // If bare ID, check watchlist companies to find which board it belongs to.
+    // A provider outage would otherwise burn every board's full retry budget in
+    // series, so the scan is bounded by a deadline and stops early.
     let lastError: Error | null = null
+    const scanDeadline = Date.now() + 20000
+    let scanned = 0
     for (const entry of watchlist) {
+      if (Date.now() > scanDeadline) break
+      scanned++
       try {
         if (entry.provider === "greenhouse" && /^\d+$/.test(target)) {
           const check = await fetchWithBackoff(
@@ -130,12 +155,18 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
     }
 
     if (!parsed) {
+      const truncated = scanned < watchlist.length ? ` (scan stopped after ${scanned} of ${watchlist.length} boards)` : ""
       const errorMsg = lastError
-        ? `Could not identify ATS provider or company from "${target}": ${lastError.message}`
-        : `Could not identify ATS provider or company from "${target}"`
+        ? `Could not identify ATS provider or company from "${target}": ${lastError.message}${truncated}`
+        : `Could not identify ATS provider or company from "${target}"${truncated}`
       writeError(errorMsg, "BAD_ID")
       return 1
     }
+  }
+
+  if (!SAFE_JOB_ID.test(parsed.jobId)) {
+    writeError(`Invalid job id "${parsed.jobId}": expected letters, digits, dot, underscore or hyphen`, "BAD_ID")
+    return 1
   }
 
   try {

@@ -91,9 +91,16 @@ describe("ATS Watchlist CLI flag validation", () => {
   describe("detail argument validation", () => {
     test("missing id exits 1 with NO_ID", async () => {
       const result = await runCLI(["detail"]);
-      expect(result.exitCode).not.toBe(0);
+      expect(result.exitCode).toBe(1);
       const err = parsedStderr(result.stderr);
       expect(err.code).toBe("NO_ID");
+    });
+
+    test("extra positional after detail exits 1 with BAD_ARG", async () => {
+      const result = await runCLI(["detail", "12345", "67890"]);
+      expect(result.exitCode).toBe(1);
+      const err = parsedStderr(result.stderr);
+      expect(err.code).toBe("BAD_ARG");
     });
   });
 

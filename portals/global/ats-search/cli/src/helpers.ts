@@ -42,7 +42,18 @@ export function loadWatchlist(customPath?: string): WatchlistEntry[] {
       throw new Error(`Watchlist file not found: ${customPath}`)
     }
     const content = readFileSync(abs, "utf-8")
-    return JSON.parse(content) as WatchlistEntry[]
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch (e) {
+      throw new Error(
+        `Watchlist file ${customPath} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Watchlist file ${customPath} must contain a JSON array of entries`)
+    }
+    return parsed as WatchlistEntry[]
   }
 
   // The watchlist ships inside the skill folder, so an installed portal works
@@ -84,6 +95,9 @@ function isAllowedRedirect(fromUrl: string, toUrl: string): boolean {
     const from = new URL(fromUrl)
     const to = new URL(toUrl)
     if (to.protocol !== "http:" && to.protocol !== "https:") return false
+    // No HTTPS -> HTTP downgrade: a provider redirect must not turn the request
+    // into cleartext on the way to an otherwise allowed host.
+    if (from.protocol === "https:" && to.protocol === "http:") return false
     for (const group of ATS_HOST_GROUPS) {
       if (group.includes(from.hostname)) {
         return group.includes(to.hostname)

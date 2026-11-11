@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { runSearch } from "../src/commands/search";
 import { runDetail } from "../src/commands/detail";
 
@@ -332,5 +335,29 @@ describe("ATS runDetail (mocked fetch)", () => {
     // In watchlist.json, slug "vercel" has company "Vercel"
     expect(parsed.company).toBe("Vercel");
     expect(parsed.site).toBe("GREENHOUSE:Vercel");
+  });
+
+  test("a malformed --watchlist reports WATCHLIST_FAILED, not INTERNAL_ERROR", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+    const bad = join(dir, "broken.json");
+    writeFileSync(bad, "{ not json");
+    const err = captureStderr();
+
+    const code = await runDetail({ id: "greenhouse:vercel:991", watchlist: bad, format: "json" });
+
+    expect(code).toBe(1);
+    expect(JSON.parse(err.get()).code).toBe("WATCHLIST_FAILED");
+  });
+
+  test("rejects a composite id whose jobId would escape the board path", async () => {
+    const err = captureStderr();
+
+    const code = await runDetail({
+      id: "greenhouse:vercel:../../../v1/boards/other/jobs/1",
+      format: "json",
+    });
+
+    expect(code).toBe(1);
+    expect(JSON.parse(err.get()).code).toBe("BAD_ID");
   });
 });
