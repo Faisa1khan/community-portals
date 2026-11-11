@@ -30,16 +30,21 @@ const DEFAULT_KEYWORDS = [
   "software",
 ]
 
-function matchScore(job: NormalizedJob, query?: string, entryKeywords?: string[]): number {
-  const title = (job.title || "").toLowerCase()
-  const desc = (job.description || "").toLowerCase()
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
 
-  if (query) {
-    const q = query.toLowerCase()
-    if (title.includes(q)) return 10
-    const words = q.split(/\s+/).filter(Boolean)
-    if (words.every((w) => title.includes(w))) return 9
-    if (words.every((w) => `${title} ${desc}`.includes(w))) return 2
+function matchScore(job: NormalizedJob, query?: string, entryKeywords?: string[]): number {
+  const title = job.title || ""
+  const desc = job.description || ""
+
+  if (query !== undefined) {
+    const words = query.trim().split(/\s+/).filter(Boolean)
+    if (words.length === 0) return 0
+
+    const regexes = words.map((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, "i"))
+    if (regexes.every((re) => re.test(title))) return 10
+    if (regexes.every((re) => re.test(title) || re.test(desc))) return 2
     return 0
   }
 
@@ -47,8 +52,7 @@ function matchScore(job: NormalizedJob, query?: string, entryKeywords?: string[]
   const keywords = entryKeywords && entryKeywords.length > 0 ? entryKeywords : DEFAULT_KEYWORDS
   let score = 0
   for (const kw of keywords) {
-    const k = kw.toLowerCase()
-    const regex = new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i")
+    const regex = new RegExp(`\\b${escapeRegExp(kw)}\\b`, "i")
     if (regex.test(title)) {
       score += 5
     } else if (regex.test(desc)) {
@@ -110,6 +114,25 @@ function renderPlain(rows: NormalizedJob[]): string {
     .join("\n\n")
 }
 
+async function mapConcurrent<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let index = 0
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const i = index++
+      results[i] = await fn(items[i])
+    }
+  })
+
+  await Promise.all(workers)
+  return results
+}
+
 export async function runSearch(opts: SearchOpts): Promise<number> {
   try {
     let watchlist = loadWatchlist(opts.watchlist)
@@ -130,16 +153,24 @@ export async function runSearch(opts: SearchOpts): Promise<number> {
     }
 
     // Fetch boards in parallel with bounded concurrency
-    const boardResults = await Promise.all(
-      watchlist.map(async (entry) => {
-        try {
-          const jobs = await fetchBoardJobs(entry)
-          return { entry, jobs }
-        } catch {
-          return { entry, jobs: [] }
-        }
-      }),
-    )
+    let failedBoards = 0
+    const boardResults = await mapConcurrent(watchlist, 6, async (entry) => {
+      try {
+        const jobs = await fetchBoardJobs(entry)
+        return { entry, jobs }
+      } catch (e) {
+        failedBoards++
+        writeError(
+          `Failed to fetch ${entry.provider} board for ${entry.company}: ${e instanceof Error ? e.message : String(e)}`,
+          "BOARD_FAILED",
+        )
+        return { entry, jobs: [] }
+      }
+    })
+
+    if (failedBoards === watchlist.length && watchlist.length > 0) {
+      return 1
+    }
 
     const scoredJobs: Array<{ job: NormalizedJob; score: number }> = []
     const seenUrls = new Set<string>()

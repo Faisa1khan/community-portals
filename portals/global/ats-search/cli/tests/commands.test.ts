@@ -99,6 +99,11 @@ describe("ATS runSearch (mocked fetch)", () => {
     expect(first).toHaveProperty("company");
     expect(first).toHaveProperty("location");
     expect(first).toHaveProperty("url");
+
+    const providers = new Set(parsed.results.map((r: any) => r.provider));
+    expect(providers.has("greenhouse")).toBe(true);
+    expect(providers.has("lever")).toBe(true);
+    expect(providers.has("ashby")).toBe(true);
   });
 
   test("filters by keyword query", async () => {
@@ -130,6 +135,72 @@ describe("ATS runSearch (mocked fetch)", () => {
     const parsed = JSON.parse(out.get());
     expect(parsed.results).toHaveLength(1);
     expect(parsed.results[0].title).toBe("Senior React Developer");
+  });
+
+  test("uses word boundary matching and rejects substrings like Retail for AI", async () => {
+    mockFetchRouter({
+      "greenhouse.io/v1/boards/vercel/jobs": {
+        jobs: [
+          {
+            id: 991,
+            title: "Retail Associate",
+            absolute_url: "https://boards.greenhouse.io/vercel/jobs/991",
+            location: { name: "Remote" },
+            content: "Email support available now",
+          },
+          {
+            id: 992,
+            title: "Staff AI Engineer",
+            absolute_url: "https://boards.greenhouse.io/vercel/jobs/992",
+            location: { name: "Remote" },
+            content: "LLM agent development",
+          },
+        ],
+      },
+    });
+
+    const out = captureStdout();
+    const code = await runSearch({ query: "AI", company: "vercel", limit: 10, format: "json" });
+    expect(code).toBe(0);
+
+    const parsed = JSON.parse(out.get());
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].title).toBe("Staff AI Engineer");
+  });
+
+  test("whitespace-only query matches nothing", async () => {
+    mockFetchRouter({
+      "greenhouse.io/v1/boards/vercel/jobs": {
+        jobs: [
+          {
+            id: 991,
+            title: "Software Engineer",
+            absolute_url: "https://boards.greenhouse.io/vercel/jobs/991",
+            content: "General engineering",
+          },
+        ],
+      },
+    });
+
+    const out = captureStdout();
+    const code = await runSearch({ query: "   ", company: "vercel", limit: 10, format: "json" });
+    expect(code).toBe(0);
+
+    const parsed = JSON.parse(out.get());
+    expect(parsed.results).toHaveLength(0);
+  });
+
+  test("writes board fetch failures to stderr and returns 1 when all boards fail", async () => {
+    // Empty router will 404 all routes, but Greenhouse list 404 returns null -> empty jobs
+    // So let's mock fetch to throw or return 500
+    globalThis.fetch = (async () => {
+      throw new Error("Network offline");
+    }) as unknown as typeof fetch;
+
+    const err = captureStderr();
+    const code = await runSearch({ company: "vercel", limit: 10, format: "json" });
+    expect(code).toBe(1);
+    expect(err.get()).toContain("BOARD_FAILED");
   });
 });
 
@@ -203,5 +274,63 @@ describe("ATS runDetail (mocked fetch)", () => {
     const code = await runDetail({ id: "greenhouse:vercel:404", format: "json" });
     expect(code).toBe(1);
     expect(JSON.parse(err.get()).code).toBe("NOT_FOUND");
+  });
+
+  test("resolves bare numeric ID against watchlist boards", async () => {
+    mockFetchRouter({
+      "greenhouse.io/v1/boards/vercel/jobs/991": {
+        id: 991,
+        title: "Senior Frontend Engineer",
+        absolute_url: "https://boards.greenhouse.io/vercel/jobs/991",
+        content: "<p>Detailed description</p>",
+      },
+    });
+
+    const out = captureStdout();
+    const code = await runDetail({ id: "991", format: "json" });
+    expect(code).toBe(0);
+
+    const parsed = JSON.parse(out.get());
+    expect(parsed.id).toBe("greenhouse:vercel:991");
+    expect(parsed.provider).toBe("greenhouse");
+    expect(parsed.company).toBe("Vercel");
+  });
+
+  test("returns BAD_ID when bare numeric ID matches no watchlist board", async () => {
+    mockFetchRouter({});
+    const err = captureStderr();
+
+    const code = await runDetail({ id: "999999999", format: "json" });
+    expect(code).toBe(1);
+    const parsed = JSON.parse(err.get());
+    expect(parsed.code).toBe("BAD_ID");
+  });
+
+  test("rejects company slug not in watchlist with BAD_ID", async () => {
+    const err = captureStderr();
+    const code = await runDetail({ id: "greenhouse:unknowncompany:123", format: "json" });
+    expect(code).toBe(1);
+    const parsed = JSON.parse(err.get());
+    expect(parsed.code).toBe("BAD_ID");
+  });
+
+  test("uses watchlist display name for company and site", async () => {
+    mockFetchRouter({
+      "greenhouse.io/v1/boards/vercel/jobs/991": {
+        id: 991,
+        title: "Senior Frontend Engineer",
+        absolute_url: "https://boards.greenhouse.io/vercel/jobs/991",
+        content: "<p>Detailed description</p>",
+      },
+    });
+
+    const out = captureStdout();
+    const code = await runDetail({ id: "greenhouse:vercel:991", format: "json" });
+    expect(code).toBe(0);
+
+    const parsed = JSON.parse(out.get());
+    // In watchlist.json, slug "vercel" has company "Vercel"
+    expect(parsed.company).toBe("Vercel");
+    expect(parsed.site).toBe("GREENHOUSE:Vercel");
   });
 });

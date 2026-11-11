@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseIdentifier } from "../src/commands/detail";
-import { cleanHtml, decodeHtmlEntities, loadWatchlist } from "../src/helpers";
+import { cleanHtml, decodeHtmlEntities, loadWatchlist, sanitizeApplyUrl } from "../src/helpers";
 
 describe("ATS Watchlist parsing and identifiers", () => {
   test("parseIdentifier parses composite ID", () => {
@@ -41,6 +41,8 @@ describe("ATS Watchlist parsing and identifiers", () => {
     expect(decodeHtmlEntities("Lead &amp; Principal &#x2f; Staff")).toBe(
       "Lead & Principal / Staff"
     );
+    // Escaped entities are decoded once without double-decoding &amp;lt; to <
+    expect(decodeHtmlEntities("&amp;lt;")).toBe("&lt;");
   });
 
   test("cleanHtml formats markup into readable text", () => {
@@ -50,11 +52,36 @@ describe("ATS Watchlist parsing and identifiers", () => {
     expect(cleaned).toContain("5+ years React");
   });
 
+  test("cleanHtml preserves comparisons like <100ms and >99.9%", () => {
+    const raw = "<p>Latency &lt;100ms and reliability &gt;99.9% guaranteed.</p>";
+    const cleaned = cleanHtml(raw);
+    expect(cleaned).toBe("Latency <100ms and reliability >99.9% guaranteed.");
+  });
+
+  test("sanitizeApplyUrl validates and resolves application URLs", () => {
+    const postingUrl = "https://jobs.lever.co/meesho/123";
+    expect(sanitizeApplyUrl("https://jobs.lever.co/meesho/123/apply", postingUrl)).toBe(
+      "https://jobs.lever.co/meesho/123/apply"
+    );
+    expect(sanitizeApplyUrl("/apply", postingUrl)).toBe(
+      "https://jobs.lever.co/apply"
+    );
+    expect(sanitizeApplyUrl("javascript:alert(1)", postingUrl)).toBe(
+      postingUrl
+    );
+  });
+
   test("loadWatchlist loads seeded watchlist correctly", () => {
     const watchlist = loadWatchlist();
     expect(watchlist.length).toBeGreaterThanOrEqual(10);
     expect(watchlist.some((w) => w.slug === "vercel" && w.provider === "greenhouse")).toBe(true);
     expect(watchlist.some((w) => w.slug === "notion" && w.provider === "ashby")).toBe(true);
     expect(watchlist.some((w) => w.slug === "meesho" && w.provider === "lever")).toBe(true);
+  });
+
+  test("loadWatchlist with explicit non-existent path throws error without fallback", () => {
+    expect(() => loadWatchlist("/nonexistent/watchlist.json")).toThrow(
+      /Watchlist file not found/
+    );
   });
 });

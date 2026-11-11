@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { fetchWithBackoff } from "../src/helpers";
+import { fetchLeverJobs, fetchWithBackoff } from "../src/helpers";
 
 const originalFetch = globalThis.fetch;
 const originalSetTimeout = globalThis.setTimeout;
@@ -62,5 +62,76 @@ describe("ATS fetchWithBackoff retry and error handling", () => {
 
     await expect(fetchWithBackoff("https://example.com/api")).rejects.toThrow(/Connection error/i);
     expect(state.calls).toBe(1);
+  });
+
+  test("follows redirects to allowed ATS host", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const u = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      urls.push(u);
+      if (u === "https://boards-api.greenhouse.io/v1/boards/vercel/jobs") {
+        return new Response(null, {
+          status: 301,
+          headers: { location: "https://boards.greenhouse.io/v1/boards/vercel/jobs" },
+        });
+      }
+      return new Response(JSON.stringify({ jobs: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const res = await fetchWithBackoff("https://boards-api.greenhouse.io/v1/boards/vercel/jobs");
+    expect(urls).toEqual([
+      "https://boards-api.greenhouse.io/v1/boards/vercel/jobs",
+      "https://boards.greenhouse.io/v1/boards/vercel/jobs",
+    ]);
+    expect(res).toEqual({ jobs: [] });
+  });
+
+  test("rejects redirects to unauthorized host", async () => {
+    globalThis.fetch = (async () => {
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://malicious-site.com/exploit" },
+      });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      fetchWithBackoff("https://boards-api.greenhouse.io/v1/boards/vercel/jobs")
+    ).rejects.toThrow(/unauthorized host/i);
+  });
+
+  test("fetchLeverJobs paginates using skip until page is shorter than limit", async () => {
+    const requestedUrls: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const u = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      requestedUrls.push(u);
+      if (u.includes("skip=0")) {
+        const page1 = Array.from({ length: 100 }, (_, i) => ({
+          id: `job-${i}`,
+          text: `Engineer ${i}`,
+          hostedUrl: `https://jobs.lever.co/meesho/job-${i}`,
+        }));
+        return new Response(JSON.stringify(page1), { status: 200 });
+      }
+      if (u.includes("skip=100")) {
+        const page2 = Array.from({ length: 25 }, (_, i) => ({
+          id: `job-${100 + i}`,
+          text: `Engineer ${100 + i}`,
+          hostedUrl: `https://jobs.lever.co/meesho/job-${100 + i}`,
+        }));
+        return new Response(JSON.stringify(page2), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const jobs = await fetchLeverJobs({
+      company: "Meesho",
+      provider: "lever",
+      slug: "meesho",
+    });
+
+    expect(requestedUrls).toHaveLength(2);
+    expect(requestedUrls[0]).toContain("skip=0&limit=100");
+    expect(requestedUrls[1]).toContain("skip=100&limit=100");
+    expect(jobs).toHaveLength(125);
   });
 });

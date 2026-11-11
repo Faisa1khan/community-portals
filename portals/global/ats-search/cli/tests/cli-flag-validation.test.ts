@@ -39,8 +39,52 @@ describe("ATS Watchlist CLI flag validation", () => {
 
     test("boolean flag (no value) exits 1 with BAD_ARG", async () => {
       const result = await runCLI(["search", "--limit"]);
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toBeTruthy();
+      expect(result.exitCode).toBe(1);
+      const err = parsedStderr(result.stderr);
+      expect(err.code).toBe("BAD_ARG");
+      expect(err.error).toMatch(/limit/);
+    });
+
+    test("extra positional argument after search exits 1 with BAD_ARG", async () => {
+      const result = await runCLI(["search", "frontend"]);
+      expect(result.exitCode).toBe(1);
+      const err = parsedStderr(result.stderr);
+      expect(err.code).toBe("BAD_ARG");
+      expect(err.error).toMatch(/positional argument/);
+    });
+
+    test("unsupported format for search exits 1 with BAD_ARG", async () => {
+      const result = await runCLI(["search", "--format", "tabel"]);
+      expect(result.exitCode).toBe(1);
+      const err = parsedStderr(result.stderr);
+      expect(err.code).toBe("BAD_ARG");
+      expect(err.error).toMatch(/format/);
+    });
+
+    test("unsupported format for detail exits 1 with BAD_ARG", async () => {
+      const result = await runCLI(["detail", "greenhouse:vercel:123", "--format", "table"]);
+      expect(result.exitCode).toBe(1);
+      const err = parsedStderr(result.stderr);
+      expect(err.code).toBe("BAD_ARG");
+      expect(err.error).toMatch(/format/);
+    });
+
+    for (const flag of ["query", "company", "provider", "watchlist"]) {
+      test(`search --${flag} without value exits 1 with BAD_ARG`, async () => {
+        const result = await runCLI(["search", `--${flag}`]);
+        expect(result.exitCode).toBe(1);
+        const err = parsedStderr(result.stderr);
+        expect(err.code).toBe("BAD_ARG");
+        expect(err.error).toMatch(new RegExp(flag));
+      });
+    }
+
+    test("detail --watchlist without value exits 1 with BAD_ARG", async () => {
+      const result = await runCLI(["detail", "greenhouse:vercel:123", "--watchlist"]);
+      expect(result.exitCode).toBe(1);
+      const err = parsedStderr(result.stderr);
+      expect(err.code).toBe("BAD_ARG");
+      expect(err.error).toMatch(/watchlist/);
     });
   });
 

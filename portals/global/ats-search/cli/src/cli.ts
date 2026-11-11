@@ -49,7 +49,7 @@ SEARCH FLAGS
   --query, -q <text>      Keywords (title, description). Default matches engineer/frontend/react/ai.
   --company, -c <name>    Filter to a specific target company name or slug.
   --provider, -p <prov>   Filter to greenhouse | lever | ashby.
-  --watchlist <path>      Custom path to watchlist JSON (default: tools/ats_watchlist.json).
+  --watchlist <path>      Custom path to watchlist JSON (default: the skill's own watchlist.json).
   --jobage <days>         Posted within the last N days (where publication date is available).
   --limit, -n <n>         Cap total results emitted. Default: 25.
   --format <fmt>          json (default) | table | plain.
@@ -123,7 +123,41 @@ async function main(): Promise<number> {
   }
 
   if (cmd === "search") {
-    const fmt = (flags.format as string) || "json"
+    if ((flags._ as string[]).length > 1) {
+      process.stderr.write(
+        JSON.stringify({
+          error: `unexpected positional argument "${(flags._ as string[])[1]}" for 'search'; use -q / --query for search terms`,
+          code: "BAD_ARG",
+        }) + "\n",
+      )
+      return 1
+    }
+
+    for (const name of ["query", "company", "provider", "watchlist"] as const) {
+      if (flags[name] === true) {
+        process.stderr.write(
+          JSON.stringify({
+            error: `--${name} requires a value`,
+            code: "BAD_ARG",
+          }) + "\n",
+        )
+        return 1
+      }
+    }
+
+    let fmt: "json" | "table" | "plain" = "json"
+    if (flags.format !== undefined) {
+      if (typeof flags.format !== "string" || !["json", "table", "plain"].includes(flags.format)) {
+        process.stderr.write(
+          JSON.stringify({
+            error: `--format must be one of "json", "table", "plain", got "${flags.format}"`,
+            code: "BAD_ARG",
+          }) + "\n",
+        )
+        return 1
+      }
+      fmt = flags.format as "json" | "table" | "plain"
+    }
 
     for (const name of ["jobage", "limit"] as const) {
       if (flags[name] !== undefined) {
@@ -140,21 +174,45 @@ async function main(): Promise<number> {
       watchlist: typeof flags.watchlist === "string" ? flags.watchlist : undefined,
       jobage: flags.jobage ? parseInt(flags.jobage as string, 10) : undefined,
       limit: flags.limit ? Math.max(1, parseInt(flags.limit as string, 10)) : 25,
-      format: (["json", "table", "plain"].includes(fmt) ? fmt : "json") as SearchOpts["format"],
+      format: fmt,
     }
     return runSearch(opts)
   }
 
   if (cmd === "detail") {
+    if (flags.watchlist === true) {
+      process.stderr.write(
+        JSON.stringify({
+          error: `--watchlist requires a value`,
+          code: "BAD_ARG",
+        }) + "\n",
+      )
+      return 1
+    }
+
     const id = (flags._ as string[])[1]
     if (!id) {
       process.stderr.write(JSON.stringify({ error: "detail requires an <id|url>", code: "NO_ID" }) + "\n")
       return 1
     }
-    const fmt = (flags.format as string) || "json"
+
+    let fmt: "json" | "plain" = "json"
+    if (flags.format !== undefined) {
+      if (typeof flags.format !== "string" || !["json", "plain"].includes(flags.format)) {
+        process.stderr.write(
+          JSON.stringify({
+            error: `--format must be one of "json", "plain", got "${flags.format}"`,
+            code: "BAD_ARG",
+          }) + "\n",
+        )
+        return 1
+      }
+      fmt = flags.format as "json" | "plain"
+    }
+
     const opts: DetailOpts = {
       id,
-      format: (fmt === "plain" ? "plain" : "json") as DetailOpts["format"],
+      format: fmt,
       watchlist: typeof flags.watchlist === "string" ? flags.watchlist : undefined,
     }
     return runDetail(opts)

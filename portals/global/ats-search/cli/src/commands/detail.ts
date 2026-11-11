@@ -1,8 +1,9 @@
 import {
-  cleanHtml,
-  decodeHtmlEntities,
   fetchWithBackoff,
   loadWatchlist,
+  normalizeAshbyJob,
+  normalizeGreenhouseJob,
+  normalizeLeverJob,
   writeError,
   type ATSProvider,
   type NormalizedJob,
@@ -79,13 +80,25 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
     return 1
   }
 
+  const watchlist = loadWatchlist(opts.watchlist)
   let parsed = parseIdentifier(target, opts.watchlist)
 
-  // If bare ID, check watchlist companies to find which board it belongs to
-  if (!parsed) {
-    try {
-      const watchlist = loadWatchlist(opts.watchlist)
-      for (const entry of watchlist) {
+  if (parsed) {
+    // Resolve identifier against the watchlist allowlist
+    const entry = watchlist.find(
+      (w) => w.provider === parsed!.provider && w.slug.toLowerCase() === parsed!.slug.toLowerCase(),
+    )
+    if (!entry) {
+      writeError(`Could not identify ATS provider or company from "${target}"`, "BAD_ID")
+      return 1
+    }
+    parsed.company = entry.company
+    parsed.slug = entry.slug
+  } else {
+    // If bare ID, check watchlist companies to find which board it belongs to
+    let lastError: Error | null = null
+    for (const entry of watchlist) {
+      try {
         if (entry.provider === "greenhouse" && /^\d+$/.test(target)) {
           const check = await fetchWithBackoff(
             `https://boards-api.greenhouse.io/v1/boards/${entry.slug}/jobs/${target}`,
@@ -111,15 +124,18 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
             break
           }
         }
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err))
       }
-    } catch {
-      // Continue to not found
     }
-  }
 
-  if (!parsed) {
-    writeError(`Could not identify ATS provider or company from "${target}"`, "BAD_ID")
-    return 1
+    if (!parsed) {
+      const errorMsg = lastError
+        ? `Could not identify ATS provider or company from "${target}": ${lastError.message}`
+        : `Could not identify ATS provider or company from "${target}"`
+      writeError(errorMsg, "BAD_ID")
+      return 1
+    }
   }
 
   try {
@@ -131,44 +147,14 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
         `https://boards-api.greenhouse.io/v1/boards/${parsed.slug}/jobs/${parsed.jobId}?questions=true`,
       )
       if (data && data.id) {
-        const offices = Array.isArray(data.offices)
-          ? data.offices.map((o: any) => o.location || o.name).filter(Boolean)
-          : []
-        job = {
-          id: `greenhouse:${parsed.slug}:${data.id}`,
-          site: `GREENHOUSE:${company}`,
-          company: data.company_name || company,
-          title: decodeHtmlEntities(data.title || "(untitled)"),
-          location: data.location?.name || offices.join(", ") || "Remote",
-          type: data.employment_type || null,
-          salary: null,
-          url: data.absolute_url,
-          apply_url: data.absolute_url,
-          date: data.first_published ? data.first_published.slice(0, 10) : null,
-          description: cleanHtml(data.content),
-          provider: "greenhouse",
-        }
+        job = normalizeGreenhouseJob(data, parsed.slug, company)
       }
     } else if (parsed.provider === "lever") {
       const data = await fetchWithBackoff(
         `https://api.lever.co/v0/postings/${parsed.slug}/${parsed.jobId}`,
       )
       if (data && data.id) {
-        job = {
-          id: `lever:${parsed.slug}:${data.id}`,
-          site: `LEVER:${company}`,
-          company,
-          title: decodeHtmlEntities(data.text || "(untitled)"),
-          location: data.categories?.location || data.workplaceType || "Remote",
-          type: data.categories?.commitment || data.workplaceType || null,
-          salary: null,
-          url: data.hostedUrl,
-          apply_url: data.applyUrl || data.hostedUrl,
-          date: data.createdAt ? new Date(data.createdAt).toISOString().slice(0, 10) : null,
-          description:
-            data.descriptionPlain || cleanHtml(data.description) || data.descriptionBodyPlain || null,
-          provider: "lever",
-        }
+        job = normalizeLeverJob(data, parsed.slug, company)
       }
     } else if (parsed.provider === "ashby") {
       const board = await fetchWithBackoff(
@@ -177,20 +163,7 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
       if (board && board.jobs) {
         const j = board.jobs.find((item: any) => item.id === parsed!.jobId)
         if (j) {
-          job = {
-            id: `ashby:${parsed.slug}:${j.id}`,
-            site: `ASHBY:${company}`,
-            company,
-            title: decodeHtmlEntities(j.title || "(untitled)"),
-            location: j.location || (j.isRemote ? "Remote" : null) || j.workplaceType || "Remote",
-            type: j.employmentType || j.workplaceType || null,
-            salary: j.compensation?.compensationTierSummary || j.compensation?.summary || null,
-            url: j.jobUrl,
-            apply_url: j.applyUrl || j.jobUrl,
-            date: j.publishedAt ? j.publishedAt.slice(0, 10) : null,
-            description: j.descriptionPlain || cleanHtml(j.descriptionHtml) || null,
-            provider: "ashby",
-          }
+          job = normalizeAshbyJob(j, parsed.slug, company)
         }
       }
     }

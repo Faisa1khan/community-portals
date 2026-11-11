@@ -1,7 +1,7 @@
 ---
 name: ats-search
 description: >-
-  Search direct company ATS job boards (Greenhouse, Lever, Ashby) across curated target companies defined in tools/ats_watchlist.json. Normalizes live job postings into a unified result set. Triggers on: ats search, watchlist jobs, greenhouse jobs, lever jobs, ashby jobs, company board search, search target companies.
+  Search direct company ATS job boards (Greenhouse, Lever, Ashby) across curated target companies defined in the skill's own watchlist.json. Normalizes live job postings into a unified result set. Triggers on: ats search, watchlist jobs, greenhouse jobs, lever jobs, ashby jobs, company board search, search target companies.
 ---
 
 # Company ATS Watchlist Skill
@@ -75,7 +75,7 @@ bun run .agents/skills/ats-search/cli/src/cli.ts detail "greenhouse:vercel:61361
 | `table` | Quick human-readable summary |
 | `plain` | Reading a single job's full description |
 
-All errors are written to **stderr** as `{ "error": "...", "code": "..." }` and exit with code `1`.
+All errors are written to **stderr** as `{ "error": "...", "code": "..." }`. Fatal errors exit with code `1`. When searching, individual board fetch failures are written to stderr; if every board fails, the command exits with code `1`.
 
 ## Terms and robots.txt
 
