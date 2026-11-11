@@ -27,7 +27,8 @@ Implemented by this CLI: Greenhouse, Lever (US host) and Ashby. All three are pu
 ```
 
 ### 2. Lever
-- **Search / List Endpoint:** `GET https://api.lever.co/v0/postings/{company_slug}?limit={limit}`
+- **Search / List Endpoint:** `GET https://api.lever.co/v0/postings/{company_slug}?skip={skip}&limit={limit}`
+  The CLI pages this endpoint with `skip` in steps of 100 (`limit=100`) until a page returns fewer than 100 postings, so a large board is walked in full rather than truncated at the first page. The walk stops at 5,000 postings per board; a board larger than that is reported truncated by that bound, not by the page size.
 - **Detail Endpoint:** `GET https://api.lever.co/v0/postings/{company_slug}/{posting_id}`
 - **Authentication:** Keyless
 - **Response Format:**
