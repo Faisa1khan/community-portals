@@ -28,6 +28,12 @@ describe("Himalayas parsing and helper utilities", () => {
     expect(decodeHtmlEntities("&amp;lt;div&amp;gt;")).toBe("&lt;div&gt;");
   });
 
+  test("spacing entities decode to their Unicode spaces, not ASCII", () => {
+    expect(decodeHtmlEntities("a&ensp;b").codePointAt(1)).toBe(0x2002);
+    expect(decodeHtmlEntities("a&emsp;b").codePointAt(1)).toBe(0x2003);
+    expect(decodeHtmlEntities("a&thinsp;b").codePointAt(1)).toBe(0x2009);
+  });
+
   test("decodes typographic names and leaves unknown or prototype names alone", () => {
     expect(decodeHtmlEntities("&rsquo;")).toBe("’");
     expect(decodeHtmlEntities("&constructor;")).toBe("&constructor;");

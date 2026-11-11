@@ -77,7 +77,7 @@ describe("Himalayas runSearch (mocked fetch)", () => {
     expect(code).toBe(0);
 
     const parsed = JSON.parse(out.get());
-    expect(parsed.meta).toEqual({ count: 1, page: 1, matched: 1 });
+    expect(parsed.meta).toEqual({ count: 1, page: 1, scanned_matches: 1 });
     expect(parsed.results).toHaveLength(1);
     expect(parsed.results[0].id).toBe("senior-frontend-engineer-123456");
     expect(parsed.results[0].site).toBe("himalayas");
@@ -205,7 +205,7 @@ describe("Himalayas runSearch (mocked fetch)", () => {
     expect(code).toBe(0);
 
     const parsed = JSON.parse(out.get());
-    expect(parsed.meta.matched).toBe(2);
+    expect(parsed.meta.scanned_matches).toBe(2);
     expect(parsed.results).toHaveLength(2);
     expect(parsed.results.map((r: { title: string }) => r.title)).toEqual([
       "Senior Developers",
@@ -232,7 +232,7 @@ describe("Himalayas runSearch (mocked fetch)", () => {
     const code1 = await runSearch({ page: 1, limit: 2, format: "json" });
     expect(code1).toBe(0);
     const parsed1 = JSON.parse(out1.get());
-    expect(parsed1.meta.matched).toBe(2);
+    expect(parsed1.meta.scanned_matches).toBe(2);
     expect(parsed1.meta.count).toBe(2);
     expect(parsed1.meta.page).toBe(1);
     expect(parsed1.results.map((r: { id: string }) => r.id)).toEqual(["match-1", "match-2"]);
@@ -243,7 +243,7 @@ describe("Himalayas runSearch (mocked fetch)", () => {
     const code2 = await runSearch({ page: 2, limit: 2, format: "json" });
     expect(code2).toBe(0);
     const parsed2 = JSON.parse(out2.get());
-    expect(parsed2.meta.matched).toBe(4);
+    expect(parsed2.meta.scanned_matches).toBe(4);
     expect(parsed2.meta.count).toBe(2);
     expect(parsed2.meta.page).toBe(2);
     expect(parsed2.results.map((r: { id: string }) => r.id)).toEqual(["match-3", "match-4"]);

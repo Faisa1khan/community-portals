@@ -227,7 +227,10 @@ export async function runSearch(opts: SearchOpts): Promise<number> {
             meta: {
               count: results.length,
               page: opts.page,
-              matched: matched.length,
+              // How many matches the scan actually collected before it stopped.
+              // Bounded by page * limit and the 300-job cap, so it is NOT the
+              // total number of matches in the feed.
+              scanned_matches: matched.length,
             },
             results,
           },

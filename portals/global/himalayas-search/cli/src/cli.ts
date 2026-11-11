@@ -46,7 +46,7 @@ USAGE
 SEARCH FLAGS
   --query, -q <text>      Keyword search (title, excerpt, company, categories).
   --jobage <days>         Posted within the last N days.
-  --page <n>              1-indexed page of the filtered results, scanning from the top and capped at 15 feed pages / 300 jobs; a page deeper than the scan returns fewer results and meta.matched reports how many matched in total. Default: 1.
+  --page <n>              1-indexed page of the filtered results, scanning from the top and capped at 15 feed pages / 300 jobs; a page deeper than the scan returns fewer results, and meta.scanned_matches reports how many matches the scan collected (bounded by page × limit and the 300-job cap, not a total). Default: 1.
   --limit, -n <n>         Results limit (client-side cap). Default: 20.
   --category <cat>        Category filter (e.g. Developer, Fullstack-Development).
   --location, -l <text>   Location restriction filter (e.g. US, UK, Worldwide).
