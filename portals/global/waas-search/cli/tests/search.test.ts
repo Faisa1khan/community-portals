@@ -9,6 +9,8 @@ import {
   validateApplyUrl,
   parseJobDetail,
   fetchJobs,
+  htmlFetch,
+  jsonFetch,
   type WaasJobDetail,
 } from "../src/helpers.js"
 import { normalizeId, renderDetailPlain, runDetail } from "../src/commands/detail.js"
@@ -310,6 +312,78 @@ describe("waas-cli helpers", () => {
   })
 })
 
+describe("waas-cli backoff contract", () => {
+  function recordTimers(): number[] {
+    const delays: number[] = []
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+      delays.push(ms ?? 0)
+      return originalSetTimeout(fn, 0)
+    }) as unknown as typeof setTimeout
+    return delays
+  }
+
+  test("jsonFetch retries a 429 and succeeds on the next attempt", async () => {
+    recordTimers()
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls++
+      if (calls === 1) return new Response("rate limited", { status: 429, statusText: "Too Many Requests" })
+      return new Response(JSON.stringify({ jobs: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }) as unknown as typeof fetch
+
+    const data = await jsonFetch<{ jobs: unknown[] }>("https://www.workatastartup.com/jobs/search?q=x")
+    expect(calls).toBe(2)
+    expect(data?.jobs).toEqual([])
+  })
+
+  test("a persistent 503 exhausts seven attempts with a doubling delay capped at 8000 ms", async () => {
+    const delays = recordTimers()
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls++
+      return new Response("unavailable", { status: 503, statusText: "Service Unavailable" })
+    }) as unknown as typeof fetch
+
+    await expect(jsonFetch("https://www.workatastartup.com/jobs/search?q=x")).rejects.toThrow(/Request failed: 503/)
+
+    expect(calls).toBe(7)
+    const bases = [500, 1000, 2000, 4000, 8000, 8000]
+    expect(delays.length).toBe(bases.length)
+    delays.forEach((d, i) => {
+      expect(d).toBeGreaterThanOrEqual(bases[i])
+      expect(d).toBeLessThan(bases[i] + 500)
+    })
+  })
+
+  test("htmlFetch retries a 429 the same way", async () => {
+    recordTimers()
+    let calls = 0
+    globalThis.fetch = (async () => {
+      calls++
+      if (calls === 1) return new Response("rate limited", { status: 429, statusText: "Too Many Requests" })
+      return new Response("<html><body>ok</body></html>", { status: 200 })
+    }) as unknown as typeof fetch
+
+    const html = await htmlFetch("https://www.workatastartup.com/jobs")
+    expect(calls).toBe(2)
+    expect(html).toContain("ok")
+  })
+
+  test("mapRawToCard strips invisible characters from search results", () => {
+    const card = mapRawToCard({
+      id: 42,
+      title: "Frontend\u200b Engineer",
+      companyName: "Acme\u202Eevil",
+      location: "Remote",
+    } as never)
+    expect(card.title).toBe("Frontend Engineer")
+    expect(card.company).toBe("Acmeevil")
+  })
+})
+
 describe("waas-cli network-free search and detail (mocked)", () => {
   const sampleInertiaHtml = `<div data-page="{&quot;component&quot;:&quot;JobsPage&quot;,&quot;props&quot;:{&quot;jobs&quot;:[{&quot;id&quot;:67196,&quot;title&quot;:&quot;Frontend Engineer&quot;,&quot;companyName&quot;:&quot;Chima&quot;,&quot;companyBatch&quot;:&quot;W23&quot;,&quot;location&quot;:&quot;Remote (US)&quot;,&quot;roleType&quot;:&quot;Frontend&quot;,&quot;salary&quot;:&quot;$80K - $250K&quot;,&quot;companyLastActiveAt&quot;:&quot;3 days ago&quot;}]}}"></div>`
 
@@ -366,7 +440,9 @@ describe("waas-cli network-free search and detail (mocked)", () => {
 
   test("fetchJobs throws when every fetch fails (429/5xx) and emits SEARCH_FAILED on stderr with exit 1", async () => {
     instantTimers()
+    let attempts = 0
     globalThis.fetch = (async () => {
+      attempts++
       return new Response("Internal Server Error", { status: 500, statusText: "Internal Server Error" })
     }) as unknown as typeof fetch
 
@@ -381,6 +457,8 @@ describe("waas-cli network-free search and detail (mocked)", () => {
     const err = JSON.parse(getStderr().trim())
     expect(err.code).toBe("SEARCH_FAILED")
     expect(err.error).toContain("Request failed: 500")
+    // 1 initial attempt + 6 retries, for each of the two fetch paths
+    expect(attempts).toBe(14)
   })
 
   test("fetchJobs does not throw when HTML fetch fails but search API succeeds", async () => {

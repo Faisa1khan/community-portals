@@ -90,7 +90,7 @@ Props extracted:
 | `equity` | N/A | `job.equityRange` | Equity range string (e.g. `0.05% - 0.15%`) |
 | `date` | `companyLastActiveAt` | null | Relative company-activity string (when the company was last active, not the job posting date, e.g. "3 days ago") |
 | `url` | `https://www.workatastartup.com/jobs/<id>` | Same | Canonical posting URL |
-| `applyUrl` | N/A | `props.applyUrl` | Application URL (http/https only) or null |
+| `applyUrl` | `applyUrl` (present in the payload, not emitted by the CLI) | `props.applyUrl` | Application URL (http/https only) or null |
 
 ## Access & Policy Notes
 

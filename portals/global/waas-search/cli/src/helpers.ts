@@ -275,7 +275,9 @@ export function mapRawToCard(raw: RawJob): WaasJobCard {
   const idStr = String(raw.id)
   const loc = raw.location || ""
   const isRemote = /\bremote\b/i.test(loc)
-  return {
+  // Search results are third-party text too: strip invisible characters here so a
+  // listing cannot hide instructions from a model reading the JSON output.
+  return stripInvisible({
     id: idStr,
     title: raw.title || "",
     company: raw.companyName || "",
@@ -286,7 +288,7 @@ export function mapRawToCard(raw: RawJob): WaasJobCard {
     salary: raw.salary || null,
     date: raw.companyLastActiveAt || null,
     url: `${BASE_URL}/jobs/${idStr}`,
-  }
+  })
 }
 
 export interface SearchFilters {
