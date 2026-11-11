@@ -33,7 +33,7 @@ Query syntax: client-side, case-insensitive substring match over title, company,
 Key flags:
 - `--query <text>` / `-q <text>` — keyword search across title, excerpt, company, and categories (not the full description).
 - `--jobage <days>` — filter postings published within the last N days.
-- `--page <n>` — 1-indexed page of the raw API feed, applied before any filtering (default: 1). Consecutive pages can overlap or skip once a filter removes rows, so use `--limit` for a single result set and treat `--page` as feed paging only.
+- `--page <n>` — 1-indexed page of the filtered results, scanning from the top and capped at 15 feed pages / 300 jobs (default: 1); a page deeper than the scan returns fewer results and meta.matched reports how many matched in total.
 - `--limit <n>` / `-n <n>` — cap results emitted (default: 20).
 - `--category <cat>` — filter by category (e.g. `Developer`, `Frontend-Development`).
 - `--location <text>` / `-l <text>` — filter by permitted location restrictions.

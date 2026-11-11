@@ -28,6 +28,11 @@ describe("Himalayas parsing and helper utilities", () => {
     expect(decodeHtmlEntities("&amp;lt;div&amp;gt;")).toBe("&lt;div&gt;");
   });
 
+  test("decodes typographic names and leaves unknown or prototype names alone", () => {
+    expect(decodeHtmlEntities("&rsquo;")).toBe("’");
+    expect(decodeHtmlEntities("&constructor;")).toBe("&constructor;");
+  });
+
   test("cleanHtml keeps escaped markup as text", () => {
     expect(cleanHtml("<p>a &lt;div&gt; tag and &lt; 100k</p>")).toBe("a <div> tag and < 100k");
   });

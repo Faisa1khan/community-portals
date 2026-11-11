@@ -74,17 +74,28 @@ function matchesCategory(job: HimalayasJob, category: string): boolean {
 
 // Common abbreviations, expanded so -l UK cannot answer with Ukraine and -l US
 // cannot answer with Australia.
+// Each entry expands to every spelling the board uses for that market, so
+// -l USA and -l US both match "United States", and -l GB matches "Great Britain".
 const LOCATION_ALIASES: Record<string, string[]> = {
-  us: ["united states", "usa"],
-  usa: ["united states"],
-  uk: ["united kingdom", "great britain"],
-  gb: ["united kingdom"],
+  us: ["united states", "usa", "u.s."],
+  usa: ["united states", "us", "u.s."],
+  uk: ["united kingdom", "great britain", "gb"],
+  gb: ["united kingdom", "great britain", "uk"],
   uae: ["united arab emirates"],
   eu: ["european union", "europe"],
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+// Acronyms (3 chars or fewer) must match exactly, so "ui" does not hit
+// "Building" and "ai" does not hit "email". Longer keywords also accept their
+// plural/derivative forms: developer -> developers, engineer -> engineering,
+// data -> database.
+function matchesKeyword(haystack: string, keyword: string): boolean {
+  if (keyword.length <= 3) return matchesWholeWord(haystack, keyword)
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(keyword)}[a-z]*([^a-z0-9]|$)`).test(haystack)
 }
 
 function matchesWholeWord(haystack: string, needle: string): boolean {
@@ -94,7 +105,8 @@ function matchesWholeWord(haystack: string, needle: string): boolean {
 
 function matchesLocation(job: HimalayasJob, location: string): boolean {
   const loc = location.toLowerCase().trim()
-  const needles = [loc, ...(LOCATION_ALIASES[loc] ?? [])]
+  const extra = Object.hasOwn(LOCATION_ALIASES, loc) ? LOCATION_ALIASES[loc] : []
+  const needles = [loc, ...extra]
   const restrictions = (job.locationRestrictions || []).map((r) => r.toLowerCase())
   if (restrictions.length === 0) return true // No restrictions means worldwide
   return restrictions.some((r) => needles.some((n) => matchesWholeWord(r, n)))
@@ -115,7 +127,7 @@ function isTechRole(job: HimalayasJob): boolean {
   const hay = `${title} ${cats} ${parents}`
   // Whole words only: a substring test lets "ui" match "Building Manager"
   // and "ai" match "email".
-  return TECH_KEYWORDS.some((kw) => matchesWholeWord(hay, kw))
+  return TECH_KEYWORDS.some((kw) => matchesKeyword(hay, kw))
 }
 
 function shortDate(date: string | null): string {
@@ -165,13 +177,15 @@ function renderPlain(rows: JobResult[]): string {
 export async function runSearch(opts: SearchOpts): Promise<number> {
   try {
     const requestedLimit = opts.limit
-    // Himalayas API server returns max 20 per request.
-    // We fetch pages (up to 15 pages / 300 jobs max per search invocation) to satisfy filters and limits.
-    const collected: HimalayasJob[] = []
+    // `--page` counts pages of the FILTERED result set, so page 2 starts after
+    // the first `limit` matches rather than after the first 20 feed rows. Paging
+    // the raw feed instead made consecutive pages overlap or skip once a filter
+    // removed rows. Scanning still starts at the top and is capped.
+    const targetMatches = opts.page * requestedLimit
+    const matched: HimalayasJob[] = []
     const seenIds = new Set<string>()
     const pageSize = 20
-    const startOffset = (opts.page - 1) * pageSize
-    let currentOffset = startOffset
+    let currentOffset = 0
     const maxPagesToFetch = 15
 
     for (let p = 0; p < maxPagesToFetch; p++) {
@@ -190,16 +204,17 @@ export async function runSearch(opts: SearchOpts): Promise<number> {
         if (opts.location && !matchesLocation(job, opts.location)) continue
         if (opts.jobage !== undefined && !matchesJobage(job, opts.jobage)) continue
 
-        collected.push(job)
-        if (collected.length >= requestedLimit) break
+        matched.push(job)
+        if (matched.length >= targetMatches) break
       }
 
-      if (collected.length >= requestedLimit) break
+      if (matched.length >= targetMatches) break
       if (jobs.length < pageSize) break
       currentOffset += pageSize
     }
 
-    const results = collected.slice(0, requestedLimit).map(toResult)
+    const pageStart = (opts.page - 1) * requestedLimit
+    const results = matched.slice(pageStart, pageStart + requestedLimit).map(toResult)
 
     if (opts.format === "table") {
       process.stdout.write(renderTable(results) + "\n")
@@ -212,6 +227,7 @@ export async function runSearch(opts: SearchOpts): Promise<number> {
             meta: {
               count: results.length,
               page: opts.page,
+              matched: matched.length,
             },
             results,
           },

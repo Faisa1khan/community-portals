@@ -81,13 +81,19 @@ export async function apiGet(params: Record<string, string | number>): Promise<H
     try {
       response = await fetch(url, {
         headers: { "User-Agent": UA, Accept: "application/json" },
-        redirect: "follow",
+        // A redirect could carry the request to another origin, which defeats
+        // pinning the base URL; refuse it instead of following.
+        redirect: "manual",
         signal: AbortSignal.timeout(15000),
       })
     } catch (e) {
       throw new Error(
         `could not reach the Himalayas API at ${DEFAULT_API_URL} (${e instanceof Error ? e.message : String(e)})`,
       )
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`Himalayas API redirected (${response.status}); refusing to leave ${DEFAULT_API_URL}`)
     }
 
     if (response.status === 429 || response.status >= 500) {
@@ -120,14 +126,39 @@ function numericEntity(cp: number): string {
   return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ""
 }
 
-const NAMED_ENTITIES: Record<string, string> = {
+// Null-prototype map: a lookup like NAMED_ENTITIES["constructor"] must not walk
+// into Object.prototype and expand to native function source.
+const NAMED_ENTITIES: Record<string, string> = Object.assign(Object.create(null), {
   amp: "&",
   lt: "<",
   gt: ">",
   quot: '"',
   apos: "'",
   nbsp: " ",
-}
+  ensp: " ",
+  emsp: " ",
+  thinsp: " ",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  ldquo: "\u201c",
+  rdquo: "\u201d",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  hellip: "\u2026",
+  bull: "\u2022",
+  middot: "\u00b7",
+  deg: "\u00b0",
+  times: "\u00d7",
+  minus: "\u2212",
+  laquo: "\u00ab",
+  raquo: "\u00bb",
+  euro: "\u20ac",
+  pound: "\u00a3",
+  cent: "\u00a2",
+  copy: "\u00a9",
+  reg: "\u00ae",
+  trade: "\u2122",
+})
 
 // One pass, so an escaped entity (&amp;lt;) decodes to the text "&lt;" rather
 // than being decoded twice into "<".
@@ -139,7 +170,8 @@ export function decodeHtmlEntities(text: string): string {
       const decoded = numericEntity(cp)
       return decoded || match
     }
-    return NAMED_ENTITIES[body.toLowerCase()] ?? match
+    const key = body.toLowerCase()
+    return Object.hasOwn(NAMED_ENTITIES, key) ? NAMED_ENTITIES[key] : match
   })
 }
 
