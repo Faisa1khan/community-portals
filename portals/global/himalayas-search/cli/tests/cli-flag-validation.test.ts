@@ -37,10 +37,30 @@ describe("Himalayas CLI flag validation", () => {
       });
     }
 
-    test("boolean flag (no value) exits 1 with BAD_ARG", async () => {
+    test("value-taking flag with no value exits 1 with BAD_ARG", async () => {
       const result = await runCLI(["search", "--limit"]);
-      expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toBeTruthy();
+      expect(result.exitCode).toBe(1);
+      const err = parsedStderr(result.stderr);
+      expect(err.code).toBe("BAD_ARG");
+      expect(err.error).toMatch(/limit/);
+    });
+
+    test("string flag with no value exits 1 with BAD_ARG", async () => {
+      const result = await runCLI(["search", "-q", "--format", "table"]);
+      expect(result.exitCode).toBe(1);
+      expect(parsedStderr(result.stderr).code).toBe("BAD_ARG");
+    });
+
+    test("positional arguments after search are rejected", async () => {
+      const result = await runCLI(["search", "frontend", "developer"]);
+      expect(result.exitCode).toBe(1);
+      expect(parsedStderr(result.stderr).code).toBe("BAD_ARG");
+    });
+
+    test("an unsupported --format is rejected, not silently json", async () => {
+      const result = await runCLI(["search", "-q", "react", "--format", "yaml"]);
+      expect(result.exitCode).toBe(1);
+      expect(parsedStderr(result.stderr).code).toBe("BAD_ARG");
     });
   });
 

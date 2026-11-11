@@ -31,9 +31,9 @@ bun run .agents/skills/himalayas-search/cli/src/cli.ts search [flags]
 Query syntax: client-side, case-insensitive substring match over title, company, categories and excerpt; a multi-word query matches when every word appears somewhere across those fields, in any order, not necessarily adjacent; phrase quoting and OR are not honoured.
 
 Key flags:
-- `--query <text>` / `-q <text>` — keyword search across title, excerpt, categories, and description.
+- `--query <text>` / `-q <text>` — keyword search across title, excerpt, company, and categories (not the full description).
 - `--jobage <days>` — filter postings published within the last N days.
-- `--page <n>` — 1-indexed page number (default: 1).
+- `--page <n>` — 1-indexed page of the raw API feed, applied before any filtering (default: 1). Consecutive pages can overlap or skip once a filter removes rows, so use `--limit` for a single result set and treat `--page` as feed paging only.
 - `--limit <n>` / `-n <n>` — cap results emitted (default: 20).
 - `--category <cat>` — filter by category (e.g. `Developer`, `Frontend-Development`).
 - `--location <text>` / `-l <text>` — filter by permitted location restrictions.
@@ -45,7 +45,7 @@ Key flags:
 bun run .agents/skills/himalayas-search/cli/src/cli.ts detail <id|slug|url> [--format json|plain]
 ```
 
-`id` is the slug from `search` results (e.g. `senior-full-stack-developer-net-x2f-angular-...` or numeric ID). You may also pass the full `https://himalayas.app/companies/.../jobs/...` URL.
+`id` is the slug from `search` results (e.g. `senior-full-stack-developer-net-x2f-angular-...`), the trailing numeric ID, or the full `https://himalayas.app/companies/.../jobs/...` URL. The lookup walks the public feed until it finds the posting, bounded at 50 pages (1,000 listings), so a posting older than that returns `NOT_FOUND`.
 
 ## Usage examples
 
@@ -53,10 +53,10 @@ bun run .agents/skills/himalayas-search/cli/src/cli.ts detail <id|slug|url> [--f
 # Search for frontend engineering roles
 bun run .agents/skills/himalayas-search/cli/src/cli.ts search -q "frontend" --format table
 
-# Search for React or TypeScript roles posted in the last 14 days
+# Search for React roles posted in the last 14 days (a single term: OR is not supported)
 bun run .agents/skills/himalayas-search/cli/src/cli.ts search -q "React" --jobage 14 --limit 10 --format table
 
-# Search for AI or ML engineering positions
+# Search for AI roles (substring match, so postings mentioning 'email' or 'training' can appear)
 bun run .agents/skills/himalayas-search/cli/src/cli.ts search -q "AI" --format json
 
 # Fetch full details of a specific job
@@ -71,7 +71,7 @@ bun run .agents/skills/himalayas-search/cli/src/cli.ts detail law-assessment-exp
 | `table` | Quick human-readable summary |
 | `plain` | Inspecting a single job's full description |
 
-All errors are written to **stderr** as `{ "error": "...", "code": "..." }` and exit with code `1`.
+Errors are written to **stderr** as `{ "error": "...", "code": "..." }` and exit with code `1`. One exception: running the CLI with no command prints help to **stdout** and also exits `1`.
 
 ## Terms and robots.txt
 

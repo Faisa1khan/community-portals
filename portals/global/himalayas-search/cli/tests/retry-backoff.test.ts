@@ -9,9 +9,14 @@ afterEach(() => {
   globalThis.setTimeout = originalSetTimeout;
 });
 
+let delays: number[] = [];
+
 function instantTimers() {
-  globalThis.setTimeout = ((fn: () => void) =>
-    originalSetTimeout(fn, 0)) as unknown as typeof setTimeout;
+  delays = [];
+  globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+    delays.push(ms ?? 0);
+    return originalSetTimeout(fn, 0);
+  }) as unknown as typeof setTimeout;
 }
 
 function stubFetch(responses: Array<() => Response>): { calls: number } {
@@ -43,6 +48,21 @@ describe("Himalayas apiGet retry and error handling", () => {
 
     await expect(apiGet({ limit: 10, offset: 0 })).rejects.toThrow(/request failed/i);
     expect(state.calls).toBe(7);
+  });
+
+  test("backs off exponentially and caps the delay at 8000 ms", async () => {
+    instantTimers();
+    stubFetch([() => new Response("server error", { status: 500 })]);
+
+    await expect(apiGet({ limit: 10, offset: 0 })).rejects.toThrow(/request failed/i);
+
+    // 500 -> 1000 -> 2000 -> 4000 -> 8000 -> 8000, plus up to 499 ms of jitter.
+    const bases = [500, 1000, 2000, 4000, 8000, 8000];
+    expect(delays.length).toBe(bases.length);
+    delays.forEach((d, i) => {
+      expect(d).toBeGreaterThanOrEqual(bases[i]);
+      expect(d).toBeLessThan(bases[i] + 500);
+    });
   });
 
   test("fails fast on network connection error without infinite retrying", async () => {

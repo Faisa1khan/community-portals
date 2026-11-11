@@ -72,11 +72,32 @@ function matchesCategory(job: HimalayasJob, category: string): boolean {
   return cats.some((c) => c.toLowerCase().replace(/[-\s]+/g, "").includes(cat))
 }
 
+// Common abbreviations, expanded so -l UK cannot answer with Ukraine and -l US
+// cannot answer with Australia.
+const LOCATION_ALIASES: Record<string, string[]> = {
+  us: ["united states", "usa"],
+  usa: ["united states"],
+  uk: ["united kingdom", "great britain"],
+  gb: ["united kingdom"],
+  uae: ["united arab emirates"],
+  eu: ["european union", "europe"],
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function matchesWholeWord(haystack: string, needle: string): boolean {
+  if (!needle) return false
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(needle)}([^a-z0-9]|$)`).test(haystack)
+}
+
 function matchesLocation(job: HimalayasJob, location: string): boolean {
-  const loc = location.toLowerCase()
-  const restrictions = job.locationRestrictions || []
+  const loc = location.toLowerCase().trim()
+  const needles = [loc, ...(LOCATION_ALIASES[loc] ?? [])]
+  const restrictions = (job.locationRestrictions || []).map((r) => r.toLowerCase())
   if (restrictions.length === 0) return true // No restrictions means worldwide
-  return restrictions.some((r) => r.toLowerCase().includes(loc))
+  return restrictions.some((r) => needles.some((n) => matchesWholeWord(r, n)))
 }
 
 function matchesJobage(job: HimalayasJob, days: number): boolean {
@@ -92,7 +113,9 @@ function isTechRole(job: HimalayasJob): boolean {
   const cats = (job.categories || []).map((c) => c.toLowerCase()).join(" ")
   const parents = (job.parentCategories || []).map((c) => c.toLowerCase()).join(" ")
   const hay = `${title} ${cats} ${parents}`
-  return TECH_KEYWORDS.some((kw) => hay.includes(kw))
+  // Whole words only: a substring test lets "ui" match "Building Manager"
+  // and "ai" match "email".
+  return TECH_KEYWORDS.some((kw) => matchesWholeWord(hay, kw))
 }
 
 function shortDate(date: string | null): string {
@@ -143,7 +166,7 @@ export async function runSearch(opts: SearchOpts): Promise<number> {
   try {
     const requestedLimit = opts.limit
     // Himalayas API server returns max 20 per request.
-    // We fetch pages (up to 5 pages / 100 jobs max per search invocation) to satisfy filters and limits.
+    // We fetch pages (up to 15 pages / 300 jobs max per search invocation) to satisfy filters and limits.
     const collected: HimalayasJob[] = []
     const seenIds = new Set<string>()
     const pageSize = 20

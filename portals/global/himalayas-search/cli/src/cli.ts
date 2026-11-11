@@ -90,6 +90,11 @@ function parseIntFlag(name: string, raw: string | boolean | string[]): number | 
   return val
 }
 
+function fail(error: string, code: string): number {
+  process.stderr.write(JSON.stringify({ error, code }) + "\n")
+  return 1
+}
+
 async function main(): Promise<number> {
   const argv = process.argv.slice(2)
   const flags = parseFlags(argv)
@@ -119,8 +124,26 @@ async function main(): Promise<number> {
     }
   }
 
+  const positionals = flags._ as string[]
+
   if (cmd === "search") {
+    if (positionals.length > 1) {
+      return fail(
+        `'search' takes no positional arguments, got "${positionals.slice(1).join(" ")}" - use --query <text>`,
+        "BAD_ARG",
+      )
+    }
+
+    for (const name of ["query", "category", "location", "format"] as const) {
+      if (flags[name] === true) {
+        return fail(`--${name} requires a value`, "BAD_ARG")
+      }
+    }
+
     const fmt = (flags.format as string) || "json"
+    if (!["json", "table", "plain"].includes(fmt)) {
+      return fail(`--format must be one of: json, table, plain (got "${fmt}")`, "BAD_ARG")
+    }
 
     for (const name of ["jobage", "page", "limit"] as const) {
       if (flags[name] !== undefined) {
@@ -137,21 +160,32 @@ async function main(): Promise<number> {
       limit: flags.limit ? Math.max(1, parseInt(flags.limit as string, 10)) : 20,
       category: typeof flags.category === "string" ? flags.category : undefined,
       location: typeof flags.location === "string" ? flags.location : undefined,
-      format: (["json", "table", "plain"].includes(fmt) ? fmt : "json") as SearchOpts["format"],
+      format: fmt as SearchOpts["format"],
     }
     return runSearch(opts)
   }
 
   if (cmd === "detail") {
-    const id = (flags._ as string[])[1]
+    if (positionals.length > 2) {
+      return fail(
+        `'detail' takes one identifier, got ${positionals.length - 1}: "${positionals.slice(1).join(" ")}"`,
+        "BAD_ARG",
+      )
+    }
+    const id = positionals[1]
     if (!id) {
-      process.stderr.write(JSON.stringify({ error: "detail requires an <id|slug|url>", code: "NO_ID" }) + "\n")
-      return 1
+      return fail("detail requires an <id|slug|url>", "NO_ID")
+    }
+    if (flags.format === true) {
+      return fail("--format requires a value", "BAD_ARG")
     }
     const fmt = (flags.format as string) || "json"
+    if (!["json", "plain"].includes(fmt)) {
+      return fail(`--format must be json or plain for detail (got "${fmt}")`, "BAD_ARG")
+    }
     const opts: DetailOpts = {
       id,
-      format: (fmt === "plain" ? "plain" : "json") as DetailOpts["format"],
+      format: fmt as DetailOpts["format"],
     }
     return runDetail(opts)
   }

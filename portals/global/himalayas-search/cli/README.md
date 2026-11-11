@@ -6,11 +6,11 @@ Zero-dependency CLI for searching remote tech jobs on Himalayas (`https://himala
 
 ```bash
 bun run src/cli.ts search [flags]
-bun run src/cli.ts detail <slug|url> [--format json|plain]
+bun run src/cli.ts detail <id|slug|url> [--format json|plain]
 ```
 
 ## Features
 
 - Public, keyless JSON API
 - Client-side keyword, category, recency, and location filtering
-- Normalization into canonical job schema: `id`, `site`, `title`, `company`, `location`, `type`, `salary`, `url`, `apply_url`, `date`, `description`
+- Normalization into canonical job schema: `id`, `site`, `title`, `company`, `location`, `type`, `salary`, `url`, `apply_url`, `date`, `description`, `seniority`, `categories`

@@ -15,9 +15,9 @@ This file documents the API contract and parsing details for future maintenance.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `limit` | integer | Number of jobs per page. Himalayas caps this server-side at 20 per request. Default 20. |
-| `offset` | integer | Pagination offset (0-indexed). `offset = (page - 1) * limit`. |
+| `offset` | integer | Pagination offset (0-indexed). `offset = (page - 1) * limit`. The API marks `offset` deprecated in favour of `cursor`; this CLI keeps `offset` because it filters client-side and needs stable windows. |
 
-Note: The public API returns an array of jobs with full fields, including complete HTML descriptions. Keyword and category filtering are performed client-side to ensure robust matching across titles, companies, excerpts, categories, and descriptions.
+Note: The response is an object, not an array: the listings sit in its `jobs` array (alongside `comments`, `updatedAt`, `offset`, `limit`, `totalCount`, `nextCursor`). Keyword and category filtering are performed client-side to ensure robust matching across titles, companies, excerpts, categories, and descriptions.
 
 ## Response Structure
 
@@ -69,6 +69,6 @@ Note: The public API returns an array of jobs with full fields, including comple
 | `url` | `applicationLink` | Direct Himalayas job URL |
 | `apply_url` | `applicationLink` | Apply link |
 | `date` | `pubDate` | Converted from Unix seconds to `YYYY-MM-DD` |
-| `description` | `description` | HTML stripped and formatted to clean readable prose |
-| `seniority` | `seniority` | First seniority tag or joined list |
+| `description` | `description`, falling back to `excerpt` | HTML stripped and formatted to clean prose; when the cleaned HTML is empty the raw `excerpt` is used |
+| `seniority` | `seniority` | The first seniority tag only, or `null` when the array is empty |
 | `categories` | `categories` | String array |

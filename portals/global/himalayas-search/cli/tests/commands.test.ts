@@ -31,7 +31,7 @@ function mockFetch(status: number, body: unknown): void {
       status,
       headers: { "content-type": "application/json" },
     });
-  }) as typeof fetch;
+  }) as unknown as typeof fetch;
 }
 
 function sampleJob(overrides: Partial<HimalayasJob> = {}): HimalayasJob {
@@ -115,7 +115,7 @@ describe("Himalayas runSearch (mocked fetch)", () => {
   test("handles network failure with SEARCH_FAILED", async () => {
     globalThis.fetch = (async () => {
       throw new Error("Network offline");
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
     const err = captureStderr();
 
     const code = await runSearch({ page: 1, limit: 10, format: "json" });
@@ -146,6 +146,40 @@ describe("Himalayas runDetail (mocked fetch)", () => {
     const err = captureStderr();
 
     const code = await runDetail({ id: "non-existent-slug", format: "json" });
+    expect(code).toBe(1);
+    expect(JSON.parse(err.get()).code).toBe("NOT_FOUND");
+  });
+
+  test("matches a browser URL with a trailing slash and query string", async () => {
+    const job = sampleJob();
+    mockFetch(200, { jobs: [job] });
+    captureStdout();
+
+    const code = await runDetail({
+      id: "https://himalayas.app/companies/acme-corp/jobs/senior-frontend-engineer-123456/?utm_source=feed",
+      format: "json",
+    });
+
+    expect(code).toBe(0);
+  });
+
+  test("does not match a partial id inside the slug", async () => {
+    mockFetch(200, { jobs: [sampleJob()] });
+    const err = captureStderr();
+
+    const code = await runDetail({ id: "engineer", format: "json" });
+
+    expect(code).toBe(1);
+    expect(JSON.parse(err.get()).code).toBe("NOT_FOUND");
+  });
+
+  test("a job with no link never matches an arbitrary id", async () => {
+    const job = sampleJob({ applicationLink: undefined, guid: undefined });
+    mockFetch(200, { jobs: [job] });
+    const err = captureStderr();
+
+    const code = await runDetail({ id: "anything", format: "json" });
+
     expect(code).toBe(1);
     expect(JSON.parse(err.get()).code).toBe("NOT_FOUND");
   });

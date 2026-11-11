@@ -3,10 +3,8 @@
 
 export const DEFAULT_API_URL = "https://himalayas.app/jobs/api"
 
-export function apiUrl(): string {
-  const raw = (process.env.HIMALAYAS_API_URL ?? "").trim()
-  return raw || DEFAULT_API_URL
-}
+// The CLI is bound to one host on purpose: no environment variable, flag or
+// config file may redirect it at another origin.
 
 export function writeError(error: string, code: string): void {
   process.stderr.write(JSON.stringify({ error, code }) + "\n")
@@ -73,7 +71,7 @@ export async function apiGet(params: Record<string, string | number>): Promise<H
   for (const [k, v] of Object.entries(params)) {
     query.set(k, String(v))
   }
-  const url = `${apiUrl()}?${query.toString()}`
+  const url = `${DEFAULT_API_URL}?${query.toString()}`
 
   const maxRetries = 6
   let delay = 500
@@ -88,7 +86,7 @@ export async function apiGet(params: Record<string, string | number>): Promise<H
       })
     } catch (e) {
       throw new Error(
-        `could not reach the Himalayas API at ${apiUrl()} (${e instanceof Error ? e.message : String(e)})`,
+        `could not reach the Himalayas API at ${DEFAULT_API_URL} (${e instanceof Error ? e.message : String(e)})`,
       )
     }
 
@@ -122,28 +120,38 @@ function numericEntity(cp: number): string {
   return cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ""
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+}
+
+// One pass, so an escaped entity (&amp;lt;) decodes to the text "&lt;" rather
+// than being decoded twice into "<".
 export function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#x2f;/gi, "/")
-    .replace(/&#47;/g, "/")
-    .replace(/&#(\d+);/g, (_, dec) => numericEntity(parseInt(dec, 10)))
-    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, hex) => numericEntity(parseInt(hex, 16)))
-    .replace(/&nbsp;/g, " ")
+  return text.replace(/&(#[xX][0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (match, body: string) => {
+    if (body.startsWith("#")) {
+      const hex = body[1] === "x" || body[1] === "X"
+      const cp = hex ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10)
+      const decoded = numericEntity(cp)
+      return decoded || match
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? match
+  })
 }
 
 export function cleanHtml(html: string | null | undefined): string | null {
   if (!html) return null
-  const initialDecoded = decodeHtmlEntities(html)
-  const withBreaks = initialDecoded
+  // Strip markup before decoding: text that was escaped in the source
+  // ("&lt;div&gt;") is content, not a tag, so it must survive.
+  const withoutTags = html
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/(p|li|ul|ol|div|h\d)>/gi, "\n")
-  const text = decodeHtmlEntities(withBreaks.replace(/<[^>]+>/g, " "))
+    .replace(/<[^>]+>/g, " ")
+  const text = decodeHtmlEntities(withoutTags)
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")

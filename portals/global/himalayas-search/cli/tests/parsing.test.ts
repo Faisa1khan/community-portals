@@ -24,11 +24,18 @@ describe("Himalayas parsing and helper utilities", () => {
     expect(decodeHtmlEntities("Salary &#36;100k")).toBe("Salary $100k");
   });
 
+  test("decodeHtmlEntities does not double-decode an escaped entity", () => {
+    expect(decodeHtmlEntities("&amp;lt;div&amp;gt;")).toBe("&lt;div&gt;");
+  });
+
+  test("cleanHtml keeps escaped markup as text", () => {
+    expect(cleanHtml("<p>a &lt;div&gt; tag and &lt; 100k</p>")).toBe("a <div> tag and < 100k");
+  });
+
   test("cleanHtml strips tags and converts break tags to newlines", () => {
     const raw = "<p>First line</p><br><p>Second line</p>";
     const cleaned = cleanHtml(raw);
-    expect(cleaned).toContain("First line");
-    expect(cleaned).toContain("Second line");
+    expect(cleaned).toBe("First line\n\nSecond line");
   });
 
   test("formatSalary handles min, max, currency, and period", () => {
@@ -48,7 +55,7 @@ describe("Himalayas parsing and helper utilities", () => {
   test("formatDate converts Unix timestamp in seconds to YYYY-MM-DD", () => {
     // 1789383447 seconds -> 2026-09-14
     const d = formatDate(1789383447);
-    expect(d).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(d).toBe("2026-09-14");
     expect(formatDate(undefined)).toBeNull();
   });
 

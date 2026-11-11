@@ -22,12 +22,14 @@ export interface DetailResult extends JobResult {
 function matchesIdentifier(job: HimalayasJob, target: string): boolean {
   const t = target.toLowerCase().trim()
   const rawUrl = (job.applicationLink || job.guid || "").toLowerCase()
+  // No link means no slug: without this guard `t.endsWith("")` matches every job.
+  if (!rawUrl) return false
   const slug = extractSlug(rawUrl).toLowerCase()
 
-  if (rawUrl === t || slug === t) return true
-  if (slug.endsWith(t) || t.endsWith(slug)) return true
+  if (rawUrl === t) return true
+  if (slug && slug === t) return true
 
-  // Check if target is a numeric ID at the end of the slug
+  // A numeric id is accepted only as the whole trailing id of the slug.
   const numMatch = slug.match(/(\d{6,})$/)
   if (numMatch && numMatch[1] === t) return true
 
@@ -35,38 +37,42 @@ function matchesIdentifier(job: HimalayasJob, target: string): boolean {
 }
 
 function renderPlain(job: DetailResult): string {
-  const lines = [
+  // null marks an absent field; "" is a deliberate blank separator line and must survive.
+  const lines: Array<string | null> = [
     job.title,
     `${job.company ?? "—"} · ${job.location ?? "—"}`,
     "",
-    job.date ? `Posted: ${job.date}` : "",
-    job.seniority ? `Seniority: ${job.seniority}` : "",
-    job.type ? `Employment: ${job.type}` : "",
-    job.salary ? `Salary: ${job.salary}` : "",
-    job.categories && job.categories.length > 0 ? `Categories: ${job.categories.join(", ")}` : "",
+    job.date ? `Posted: ${job.date}` : null,
+    job.seniority ? `Seniority: ${job.seniority}` : null,
+    job.type ? `Employment: ${job.type}` : null,
+    job.salary ? `Salary: ${job.salary}` : null,
+    job.categories && job.categories.length > 0 ? `Categories: ${job.categories.join(", ")}` : null,
     "",
     job.fullDescription || job.description || "(no description)",
     "",
     `Apply URL: ${job.apply_url}`,
     `ID: ${job.id}`,
-  ].filter((l) => l !== "")
+  ]
 
-  return lines.join("\n")
+  return lines.filter((l) => l !== null).join("\n")
 }
 
 export async function runDetail(opts: DetailOpts): Promise<number> {
-  const target = opts.id.trim()
+  // Normalise first: a browser URL with a trailing slash or ?query must match like the slug does.
+  const target = extractSlug(opts.id)
   if (!target) {
     writeError("detail requires an <id|slug|url>", "NO_ID")
     return 1
   }
 
   try {
-    // Scan up to 5 pages (100 jobs) from Himalayas API
+    // Walk the feed until the posting is found or the feed ends,
+    // bounded so a miss cannot page forever.
     let foundJob: HimalayasJob | null = null
     const pageSize = 20
+    const maxPages = 50
 
-    for (let p = 0; p < 5; p++) {
+    for (let p = 0; p < maxPages; p++) {
       const data = await apiGet({ limit: pageSize, offset: p * pageSize })
       const jobs = data.jobs || []
       if (jobs.length === 0) break
@@ -78,6 +84,7 @@ export async function runDetail(opts: DetailOpts): Promise<number> {
         }
       }
       if (foundJob) break
+      if (jobs.length < pageSize) break
     }
 
     if (!foundJob) {
