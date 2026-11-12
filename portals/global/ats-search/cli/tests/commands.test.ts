@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { runSearch } from "../src/commands/search";
@@ -42,7 +42,18 @@ function mockFetchRouter(routes: Record<string, unknown>): void {
   }) as typeof fetch;
 }
 
+const tempDirs: string[] = [];
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
 afterEach(() => {
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
   globalThis.fetch = originalFetch;
   process.stdout.write = originalStdoutWrite;
   process.stderr.write = originalStderrWrite;
@@ -338,7 +349,7 @@ describe("ATS runDetail (mocked fetch)", () => {
   });
 
   test("a malformed --watchlist reports WATCHLIST_FAILED, not INTERNAL_ERROR", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+    const dir = makeTempDir();
     const bad = join(dir, "broken.json");
     writeFileSync(bad, "{ not json");
     const err = captureStderr();

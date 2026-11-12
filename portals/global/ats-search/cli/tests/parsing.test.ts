@@ -1,9 +1,23 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { parseIdentifier } from "../src/commands/detail";
-import { mkdtempSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { cleanHtml, decodeHtmlEntities, loadWatchlist, sanitizeApplyUrl } from "../src/helpers";
+
+const tempDirs: string[] = [];
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
+});
 
 describe("ATS Watchlist parsing and identifiers", () => {
   test("parseIdentifier parses composite ID", () => {
@@ -83,7 +97,7 @@ describe("ATS Watchlist parsing and identifiers", () => {
   });
 
   test("loadWatchlist names the file when an explicit path is not valid JSON", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+    const dir = makeTempDir();
     const bad = join(dir, "broken.json");
     writeFileSync(bad, "{ not json");
 
@@ -91,7 +105,7 @@ describe("ATS Watchlist parsing and identifiers", () => {
   });
 
   test("loadWatchlist rejects an explicit path whose JSON is not an array", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ats-watchlist-"));
+    const dir = makeTempDir();
     const obj = join(dir, "object.json");
     writeFileSync(obj, JSON.stringify({ company: "Vercel" }));
 
